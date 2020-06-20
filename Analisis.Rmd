@@ -1,0 +1,512 @@
+---
+title: "Nuevo Trabajo de Minería de Datos"
+author: "Vicente López Oliva"
+date: "18/6/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Cargamos las dependencias oportunas
+```{r}
+library("naivebayes")
+library("heatmaply")
+library("class")
+library("MASS")
+library("ggplot2")
+library(gridExtra)
+library(grid)
+```
+
+Cargamos los datos necesarios
+```{r}
+data <- read.csv("fake_job_postings.csv")
+```
+
+Deducimos las nuevas variables booleanas
+```{r}
+dn = dim(data)[1]
+has_company_profile = rep(1, dn)
+has_benefits = rep(1, dn)
+for(j in 1:dn) {
+  if (is.na(data$company_profile[j]) | "" == data$company_profile[j]){
+    has_company_profile[j] = 0
+  }
+  if (is.na(data$benefits[j]) | "" == data$benefits[j]){
+    has_benefits[j] = 0
+  }
+}
+
+data$has_company_profile <- has_company_profile
+data$has_benefits <- has_benefits
+```
+
+Asignamos un valor a las cadenas vacías
+```{r}
+data$required_experience[data$required_experience == ""] = "Not Applicable"
+data$required_education[data$required_education == ""] = "Unspecified"
+data$employment_type[data$employment_type == ""] = "Other"
+```
+
+Histograma experiencia requerida
+```{r}
+ggplot(data, aes(x=required_experience)) + geom_histogram(stat="count")
+```
+
+Histograma formación requerida
+```{r}
+ggplot(data, aes(x=required_education)) + geom_histogram(stat="count")
+```
+
+Cambiamos valores que apenas aparecen
+```{r}
+data$required_education <- factor(data$required_education, levels = c(levels(data$required_education), "High School", "College Coursework"))
+data$required_education[data$required_education == "Vocational - HS Diploma"] = "High School"
+data$required_education[data$required_education == "High School or equivalent"] = "High School"
+data$required_education[data$required_education == "Vocational - Degree"] = "Associate Degree"
+data$required_education[data$required_education == "Some College Coursework Completed"] = "College Coursework"
+data$required_education[data$required_education == "Some High School Coursework"] = "High School"
+```
+
+Histograma formación requerida
+```{r}
+ggplot(data, aes(x=required_education)) + geom_histogram(stat="count")
+```
+
+Histograma tipo de empleo
+```{r}
+ggplot(data, aes(x=employment_type)) + geom_histogram(stat="count")
+```
+
+Transformación rango salarial
+```{r}
+vs = strsplit(as.character(data$salary_range), "-")
+min_salary_range = c()
+max_salary_range = c()
+average_salary_range = c()
+for (i in 1:length(vs)) {
+  d <- vs[[i]]
+  if (length(d) > 0){
+    min_salary_range = c(min_salary_range, as.numeric(d[1]))
+    max_salary_range = c(max_salary_range, as.numeric(d[2]))
+  } else {
+    min_salary_range = c(min_salary_range, NA)
+    max_salary_range = c(max_salary_range, NA)
+  }
+  average_salary_range = c(average_salary_range, mean(c(min_salary_range[i], max_salary_range[i])))
+}
+data$min_salary_range = min_salary_range
+data$max_salary_range = max_salary_range
+data$average_salary_range = average_salary_range
+```
+
+Boxplot de las nuevas variables
+```{r}
+p1 <- ggplot(data, aes(x="", y=min_salary_range)) + geom_boxplot() + scale_y_log10()
+p2 <- ggplot(data, aes(x="", y=max_salary_range)) + geom_boxplot() + scale_y_log10()
+p3 <- ggplot(data, aes(x="", y=average_salary_range)) + geom_boxplot() + scale_y_log10()
+grid.arrange(p1, p2, p3, ncol=3)
+```
+
+Transformamos las variables y mostramos un boxplot de ellas
+```{r}
+data$employment_type <- factor(data$employment_type, levels = c("Other", "Temporary", "Contract", "Part-time", "Full-time"))
+data$required_experience <- factor(data$required_experience, levels = c("Not Applicable", "Entry level", "Internship", "Mid-Senior level", "Associate", "Executive", "Director"))
+data$required_education <- factor(data$required_education, levels = c("Unspecified", "Vocational", "Certification", "College Coursework", "High School", "Professional", "Bachelor's Degree", "Master's Degree", "Associate Degree", "Doctorate"))
+
+data$employment_type <- as.numeric(data$employment_type)
+data$required_experience <- as.numeric(data$required_experience)
+data$required_education <- as.numeric(data$required_education)
+
+p1 <- ggplot(data, aes(x="", y=employment_type)) + geom_boxplot()
+p2 <- ggplot(data, aes(x="", y=required_experience)) + geom_boxplot()
+p3 <- ggplot(data, aes(x="", y=required_education)) + geom_boxplot()
+grid.arrange(p1, p2, p3, ncol=3)
+```
+
+Listamos las diferentes funciones
+```{r}
+unique(data$function.)
+```
+
+Transformamos la variable de función desempeñada
+```{r}
+dn = dim(data)[1]
+
+function_is_sales = rep(0, dn)
+function_is_directive = rep(0, dn)
+function_is_scientist = rep(0, dn)
+function_is_internal = rep(0, dn)
+function_is_writer = rep(0, dn)
+function_is_artist = rep(0, dn)
+function_is_finances = rep(0, dn)
+
+function_is_sales[data$function. %in% c("Sales", "Marketing", "Customer Service", "Public Relations", "Advertising")] = 1
+function_is_directive[data$function. %in% c("Management", "Business Development", "Product Management", "Project Management", "Strategy/Planning", "General Business", "Business Analyst")] = 1
+function_is_scientist[data$function. %in% c("Information Technology", "Engineering", "Research", "Accounting/Auditing", "Quality Assurance", "Data Analyst", "Science")] = 1
+function_is_internal[data$function. %in% c("Health Care Provider", "Production", "Education", "Supply Chain", "Human Resources", "Manufactoring", "Training")] = 1
+function_is_writer[data$function. %in% c("Consulting", "Writing/Editing", "Legal")] = 1
+function_is_artist[data$function. %in% c("Design", "Art/Creative")] = 1
+function_is_finances[data$function. %in% c("Finance", "Financial Analyst", "Administrative", "Distribution", "Purchasing")] = 1
+```
+
+Extraemos el país de la localización
+```{r}
+vs = strsplit(as.character(data$location), ",")
+location = c()
+for (i in 1:length(vs)) {
+  d <- vs[[i]]
+  if (length(d) > 0){
+    location = c(location, d[1])
+  } else {
+    location = c(location, NA)
+  }
+}
+data$location = as.factor(location)
+```
+
+Vemos los diferentes paises resultantes
+```{r}
+levels(data$location)
+```
+
+Dividimos los paises según moneda y riqueza
+```{r}
+country_eur_first = rep(0, dn)
+country_eur_second = rep(0, dn)
+country_yen_first = rep(0, dn)
+country_yen_second = rep(0, dn)
+country_yen_three = rep(0, dn)
+country_three_world = rep(0, dn)
+country_half_eur = rep(0, dn)
+country_more_eur = rep(0, dn)
+country_very_small = rep(0, dn)
+
+country_eur_first[data$location %in% c("US", "CH", "DE", "GB")] = 1
+country_eur_second[data$location %in% c("AT", "BE", "CA", "CY", "DK", "EE", "ES", "FI", "FR", "HU", "IE", "IT", "LT", "LU", "LV", "MT", "MY", "NL", "NO", "PA", "PL", "PT", "SE", "SI", "SK", "SV", "UA", "VI")] = 1
+country_yen_first[data$location %in% c("JP", "CN", "HR", "RU")] = 1
+country_yen_second[data$location %in% c("AL", "CZ", "HK", "IN", "NI", "PH", "RO", "AR", "SA", "SD", "TH", "TT")] = 1
+country_yen_three[data$location %in% c("BD", "BR", "CL", "CO", "MU", "MX", "PE", "TR")] = 1
+country_three_world[data$location %in% c("AM", "CM", "EG", "GH", "IL", "IQ", "KE", "KZ", "MA", "NG", "PK", "QA", "TN", "ZA", "ZM")] = 1
+country_half_eur[data$location %in% c("AE","AU", "BG", "BY")] = 1
+country_more_eur[data$location %in% c("BH", "KW", "NZ", "SG")] = 1
+country_very_small[data$location %in% c("ID", "IS", "JM", "KH", "KR", "LK", "TW", "UG", "VN")] = 1
+```
+
+Creamos el nuevo conjunto de datos
+```{r}
+
+new_data <- data.frame("telecommuting" = data$telecommuting, "has_company_logo" = data$has_company_logo, "has_questions" = data$has_questions, "has_company_profile" = data$has_company_profile, "has_benefits" = data$has_benefits, "min_salary_range" = min_salary_range, "max_salary_range" = max_salary_range, "average_salary_range" = average_salary_range, "employment_type" = data$employment_type, "required_experience" = data$required_experience, "required_education" = data$required_education, "function_is_sales" = function_is_sales, "function_is_directive" = function_is_directive, "function_is_scientist" = function_is_scientist, "function_is_internal" = function_is_internal, "function_is_writer" = function_is_writer, "function_is_artist" = function_is_artist, "function_is_finances" = function_is_finances, "contry_eur_firs" = country_eur_first, "country_eur_second" = country_eur_second, "country_yen_first" = country_yen_first, "country_yen_second" = country_yen_second, "country_yen_three" = country_yen_three, "country_three_world" = country_three_world, "country_half_eur" = country_half_eur, "country_more_eur" = country_more_eur, "country_very_small" = country_very_small, "fraudulent" = data$fraudulent)
+summary(new_data)
+```
+
+Eliminamos los datos faltantes
+```{r}
+data2 <- new_data[complete.cases(new_data),]
+dim(data2)
+sum(data2$fraudulent)
+```
+
+Mapa de calor de las correlaciones
+```{r}
+m_cov = cor(data2)
+heatmaply(m_cov, 
+        dendrogram = "none",
+        xlab = "", ylab = "", 
+        main = "",
+        margins = c(60,100,40,20),
+        grid_color = "white",
+        grid_width = 0.00001,
+        titleX = FALSE,
+        hide_colorbar = TRUE,
+        branches_lwd = 0.1,
+        fontsize_row = 5, fontsize_col = 5,
+        labCol = colnames(m_cov),
+        labRow = rownames(m_cov),
+        )
+```
+
+Quitamos las dos métricas correlacionadas
+```{r}
+data2$min_salary_range <- NULL
+data2$max_salary_range <- NULL
+dim(data2)
+```
+
+Realizamos el PCA sobre las variables, eliminando la variable a predecir
+```{r}
+componentes=princomp(data2[-26], scores=T)
+limite.x = c(min(componentes$scores[,1]), max(componentes$scores[,1]))
+limite.y = c(min(componentes$scores[,2]), max(componentes$scores[,2]))
+plot(componentes$scores[data2$fraudulent==0,1:2], xlim=limite.x, ylim=limite.y)
+points(componentes$scores[data2$fraudulent==1,1:2], col='blue')
+```
+
+Segunda prueba haciendo uso de la matriz de correlación
+Realizamos el PCA sobre las variables, eliminando la variable a predecir
+```{r}
+componentes=princomp(data2[-26], scores=T, cor=T)
+limite.x = c(min(componentes$scores[,1]), max(componentes$scores[,1]))
+limite.y = c(min(componentes$scores[,2]), max(componentes$scores[,2]))
+plot(componentes$scores[data2$fraudulent==0,1:2], xlim=limite.x, ylim=limite.y)
+points(componentes$scores[data2$fraudulent==1,1:2], col='blue')
+```
+
+Gráfica para realizar el método del codo
+```{r}
+screeplot(componentes, npcs=20)
+```
+
+Resumen de las componentes
+```{r}
+summary(componentes)
+```
+
+Componemos los conjuntos de datos con oversampling y undersampling, separandolos en grupos de prueba y de entrenamiento, haciendo uso de los índices
+```{r}
+index_no_fraudulent = (1:dim(data2)[1])[data2$fraudulent == 0]
+index_fraudulent = (1:dim(data2)[1])[data2$fraudulent == 1]
+prc_test = 0.2
+
+test_set_over_nof = sample(index_no_fraudulent, round(prc_test * length(index_no_fraudulent)))
+train_set_over_nof = setdiff(index_no_fraudulent, test_set_over_nof)
+test_set_over_f = sample(index_fraudulent, round(prc_test * length(index_no_fraudulent)), replace=TRUE)
+train_set_over_f = sample(index_fraudulent, length(index_no_fraudulent) - length(test_set_over_f), replace=TRUE)
+test_set_over = c(test_set_over_nof, test_set_over_f)
+train_set_over = c(train_set_over_nof, train_set_over_f)
+train_set_over = data.frame("c1" = componentes$scores[,1][train_set_over], "c2" = componentes$scores[,2][train_set_over], "c3" = componentes$scores[,3][train_set_over], "c4" = componentes$scores[,4][train_set_over], "fraudulent" = data2$fraudulent[train_set_over])
+test_set_over = data.frame("c1" = componentes$scores[,1][test_set_over], "c2" = componentes$scores[,2][test_set_over], "c3" = componentes$scores[,3][test_set_over], "c4" = componentes$scores[,4][test_set_over], "fraudulent" = data2$fraudulent[test_set_over])
+c(dim(train_set_over)[1], dim(test_set_over)[1])
+
+index_un_no_fraudulent = sample(index_no_fraudulent, length(index_fraudulent))
+test_set_und_nof = sample(index_un_no_fraudulent, round(prc_test * length(index_un_no_fraudulent)))
+train_set_und_nof = setdiff(index_un_no_fraudulent, test_set_und_nof)
+test_set_und_f = sample(index_fraudulent, round(prc_test * length(index_fraudulent)))
+train_set_und_f = setdiff(index_fraudulent, test_set_und_f)
+test_set_und = c(test_set_und_nof, test_set_und_f)
+train_set_und = c(train_set_und_nof, train_set_und_f)
+train_set_und = data.frame("c1" = componentes$scores[,1][train_set_und], "c2" = componentes$scores[,2][train_set_und], "c3" = componentes$scores[,3][train_set_und], "c4" = componentes$scores[,4][train_set_und], "fraudulent" = data2$fraudulent[train_set_und])
+test_set_und = data.frame("c1" = componentes$scores[,1][test_set_und], "c2" = componentes$scores[,2][test_set_und], "c3" = componentes$scores[,3][test_set_und], "c4" = componentes$scores[,4][test_set_und], "fraudulent" = data2$fraudulent[test_set_und])
+c(dim(train_set_und)[1], dim(test_set_und)[1])
+```
+
+Entrenamos con el clasificador de Bayes
+```{r}
+res_nb_over=naive_bayes(train_set_over[-5], as.factor(train_set_over$fraudulent))
+plot(train_set_over[,1:2],  type="n")
+text(train_set_over, as.character(res_nb_over$data$y), col=c("red", "blue")[res_nb_over$data$y])
+
+res_nb_und=naive_bayes(train_set_und[-5], as.factor(train_set_und$fraudulent))
+plot(train_set_und[,1:2],  type="n")
+text(train_set_und, as.character(res_nb_und$data$y), col=c("red", "blue")[res_nb_und$data$y])
+```
+
+Mostramos los resultados mediante gráficas de pastel. Resultados para oversampling
+```{r}
+p_over = predict(res_nb_over, test_set_over[-5])
+f_p = 0
+f_n = 0
+t_p = 0
+t_n = 0
+for(i in 1:dim(test_set_over)[1]){
+  if (test_set_over$fraudulent[i] == 0){
+    if (test_set_over$fraudulent[i] == p_over[i]){
+      t_n = t_n + 1
+    } else {
+      f_p = f_p + 1
+    }
+  } else {
+    if (test_set_over$fraudulent[i] == p_over[i]){
+      t_p = t_p + 1
+    } else {
+      f_n = f_n + 1
+    }
+  }
+}
+slices <- c(t_p, f_p, t_n, f_n)
+lbls <- c("Positivo Acertado", "Falso Positivo", "Negativo Acertado", "Falso Negativo")
+pct <- round(slices/sum(slices)*100)
+lbls <- paste(lbls, pct)
+lbls <- paste(lbls,"%",sep="")
+pie(slices, labels = lbls, col=rainbow(length(lbls))) # Resultados Naive Bayes con Oversampling
+```
+
+Resultados para Undersampling
+```{r}
+p_und = predict(res_nb_und, test_set_und[-5])
+f_p = 0
+f_n = 0
+t_p = 0
+t_n = 0
+for(i in 1:dim(test_set_und)[1]){
+  if (test_set_und$fraudulent[i] == 0){
+    if (test_set_und$fraudulent[i] == p_und[i]){
+      t_n = t_n + 1
+    } else {
+      f_p = f_p + 1
+    }
+  } else {
+    if (test_set_und$fraudulent[i] == p_und[i]){
+      t_p = t_p + 1
+    } else {
+      f_n = f_n + 1
+    }
+  }
+}
+slices <- c(t_p, f_p, t_n, f_n)
+lbls <- c("Positivo Acertado", "Falso Positivo", "Negativo Acertado", "Falso Negativo")
+pct <- round(slices/sum(slices)*100)
+lbls <- paste(lbls, pct)
+lbls <- paste(lbls,"%",sep="")
+pie(slices, labels = lbls, col=rainbow(length(lbls))) # Resultados Naive Bayes con Undersampling
+```
+
+Entrenamos al algoritmo del venico más cercano y obtenemos sus resultados. Primero para Oversampling
+```{r}
+p_over = knn(train=train_set_over[-5], test=test_set_over[-5], cl=train_set_over$fraudulent, k = 4)
+
+f_p = 0
+f_n = 0
+t_p = 0
+t_n = 0
+for(i in 1:dim(test_set_over)[1]){
+  if (test_set_over$fraudulent[i] == 0){
+    if (test_set_over$fraudulent[i] == p_over[i]){
+      t_n = t_n + 1
+    } else {
+      f_p = f_p + 1
+    }
+  } else {
+    if (test_set_over$fraudulent[i] == p_over[i]){
+      t_p = t_p + 1
+    } else {
+      f_n = f_n + 1
+    }
+  }
+}
+slices <- c(t_p, f_p, t_n, f_n)
+lbls <- c("Positivo Acertado", "Falso Positivo", "Negativo Acertado", "Falso Negativo")
+pct <- round(slices/sum(slices)*100)
+lbls <- paste(lbls, pct)
+lbls <- paste(lbls,"%",sep="")
+pie(slices, labels = lbls, col=rainbow(length(lbls))) # Resultados Vecino mas Cercano con Oversampling
+```
+
+Esta vez probamos con undersampling
+```{r}
+p_und = knn(train=train_set_und[-5], test=test_set_und[-5], cl=train_set_und$fraudulent, k = 4)
+
+f_p = 0
+f_n = 0
+t_p = 0
+t_n = 0
+for(i in 1:dim(test_set_und)[1]){
+  if (test_set_und$fraudulent[i] == 0){
+    if (test_set_und$fraudulent[i] == p_und[i]){
+      t_n = t_n + 1
+    } else {
+      f_p = f_p + 1
+    }
+  } else {
+    if (test_set_und$fraudulent[i] == p_und[i]){
+      t_p = t_p + 1
+    } else {
+      f_n = f_n + 1
+    }
+  }
+}
+slices <- c(t_p, f_p, t_n, f_n)
+lbls <- c("Positivo Acertado", "Falso Positivo", "Negativo Acertado", "Falso Negativo")
+pct <- round(slices/sum(slices)*100)
+lbls <- paste(lbls, pct)
+lbls <- paste(lbls,"%",sep="")
+pie(slices, labels = lbls, col=rainbow(length(lbls))) # Resultados Vecino mas Cercano con Undersampling
+```
+
+Por último, estudiemos el discriminante Lineal de Fisher. Primero entrenamos los modelos oportunos
+```{r}
+res_lda_over = lda(train_set_over[-5], as.factor(train_set_over$fraudulent), CV=T)
+plot(train_set_over[,1:2],  type="n")
+text(train_set_over, as.character(res_lda_over$class), col=c("red", "blue")[res_lda_over$class])
+res_lda_over = lda(train_set_over[-5], as.factor(train_set_over$fraudulent))
+
+res_lda_und = lda(train_set_und[-5], as.factor(train_set_und$fraudulent), CV=T)
+plot(train_set_und[,1:2],  type="n")
+text(train_set_und, as.character(res_lda_und$class), col=c("red", "blue")[res_lda_und$class])
+res_lda_und = lda(train_set_und[-5], as.factor(train_set_und$fraudulent))
+```
+
+Mostramos los resultados para el conjunto con oversampling
+```{r}
+p_over = predict(res_lda_over, test_set_over[-5])$class
+
+f_p = 0
+f_n = 0
+t_p = 0
+t_n = 0
+for(i in 1:dim(test_set_over)[1]){
+  if (test_set_over$fraudulent[i] == 0){
+    if (test_set_over$fraudulent[i] == p_over[i]){
+      t_n = t_n + 1
+    } else {
+      f_p = f_p + 1
+    }
+  } else {
+    if (test_set_over$fraudulent[i] == p_over[i]){
+      t_p = t_p + 1
+    } else {
+      f_n = f_n + 1
+    }
+  }
+}
+slices <- c(t_p, f_p, t_n, f_n)
+lbls <- c("Positivo Acertado", "Falso Positivo", "Negativo Acertado", "Falso Negativo")
+pct <- round(slices/sum(slices)*100)
+lbls <- paste(lbls, pct)
+lbls <- paste(lbls,"%",sep="")
+pie(slices, labels = lbls, col=rainbow(length(lbls))) # Resultados Vecino mas Cercano con Oversampling
+```
+
+Esta vez probamos con undersampling
+```{r}
+p_und = predict(res_lda_und, test_set_und[-5])$class
+
+f_p = 0
+f_n = 0
+t_p = 0
+t_n = 0
+for(i in 1:dim(test_set_und)[1]){
+  if (test_set_und$fraudulent[i] == 0){
+    if (test_set_und$fraudulent[i] == p_und[i]){
+      t_n = t_n + 1
+    } else {
+      f_p = f_p + 1
+    }
+  } else {
+    if (test_set_und$fraudulent[i] == p_und[i]){
+      t_p = t_p + 1
+    } else {
+      f_n = f_n + 1
+    }
+  }
+}
+slices <- c(t_p, f_p, t_n, f_n)
+lbls <- c("Positivo Acertado", "Falso Positivo", "Negativo Acertado", "Falso Negativo")
+pct <- round(slices/sum(slices)*100)
+lbls <- paste(lbls, pct)
+lbls <- paste(lbls,"%",sep="")
+pie(slices, labels = lbls, col=rainbow(length(lbls))) # Resultados Vecino mas Cercano con Undersampling
+```
+
+
+
+
+
+
+
+
+
+
+
